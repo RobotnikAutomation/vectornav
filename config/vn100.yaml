@@ -25,7 +25,7 @@ frame_id: robot_imu_link
 # Data publication form:
 # - Both false for North East Down (IMU standard frame)
 # - tf_ned_to_enu: true for East North Up (Standard frame for robot_localization and other packages)
-# - tf_ned_to_nwu: true for North West Up (ROS standard frame, alligned with robot base link)
+# - tf_ned_to_nwu (default): true for North West Up (ROS standard frame, alligned with robot base link. Use it for Robotnik 3D SLAM module)
 tf_ned_to_enu: false
 tf_ned_to_nwu: true
 
@@ -34,9 +34,9 @@ tf_ned_to_nwu: true
 # If tf_ned_to_nwu = true and frame_based_nwu = false orientation is reported by: x->x y->-y z->-z to rotate the quaternion
 # Proper method is to rotate the quaternion by multiplication
 # If tf_ned_to_xxx = true and frame_based_xxx = true we rotate the quaternion to the frame matched label by multiplication
-# Please note that this has not been properly tested
-frame_based_enu: false
-frame_based_nwu: false
+# DO NOT USE THEM: Current behavior is not correct
+# frame_based_enu: false
+# frame_based_nwu: false
 
 # Number of consecutive invalid data packets allowed before shutting node down. Use -1 to deactivate this feature
 max_invalid_packets: 500

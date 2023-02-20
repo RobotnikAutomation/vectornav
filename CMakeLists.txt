@@ -49,10 +49,7 @@ add_subdirectory(vnproglib-1.2.0.0/cpp)
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(
-  include
-  vnproglib-1.2.0.0/cpp/include 
-  ${catkin_INCLUDE_DIRS})
+include_directories(vnproglib-1.2.0.0/cpp/include ${catkin_INCLUDE_DIRS})
 
 ## Declare a cpp library
 ## Declare a cpp executable
@@ -65,19 +62,8 @@ target_link_libraries(vnpub
   ${catkin_LIBRARIES}
 )
 
-add_executable(vectornav_node src/vectornav_node.cpp src/vectornav.cpp)
-add_dependencies(vectornav_node ${PROJECT_NAME}_generate_messages)
-target_link_libraries(vectornav_node
-  libvncxx
-  ${catkin_LIBRARIES})
-
 ## Mark executables and/or libraries for installation
 install(TARGETS vnpub
-   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-install(TARGETS vectornav_node
    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

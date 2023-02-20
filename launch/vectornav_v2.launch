@@ -1,9 +1,0 @@
-<?xml version="1.0"?>
-<launch>
-	<arg name="frame_id" default="robot_imu_link"/>
-
-	<node pkg="vectornav" type="vectornav_node" name="vectornav" output="screen" >
-		<param name="frame_id"    value="$(arg frame_id)"/> 
-        <rosparam command="load" file="$(find vectornav)/config/vn100.yaml" />
-	</node>
-</launch>

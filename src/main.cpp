@@ -163,7 +163,7 @@ bool set_horizontal(vectornav::SetFrameHorizontal::Request const & req, vectorna
   vn::math::mat3f const gain {1., 0., 0.,
                               0., 1., 0.,
                               0., 0., 1.};
-  
+
   if (req.reset) {
     vs_ptr->writeAccelerationCompensation(gain, {0., 0., 0.}, true);
     vs_ptr->writeSettings(true);
@@ -184,7 +184,7 @@ bool set_horizontal(vectornav::SetFrameHorizontal::Request const & req, vectorna
   sample_lock.lock();
     auto const end = ros::Time::now();
     take_samples = false;
-    
+
     res.samples_taken = samples.size();
     res.elapsed_time = (end - start).toSec();
 
@@ -207,8 +207,8 @@ bool set_horizontal(vectornav::SetFrameHorizontal::Request const & req, vectorna
 
   auto const curr { vs_ptr->readAccelerationCompensation() };
 
-  vn::math::vec3f const bias {curr.b.x+static_cast<float>(bias_x), 
-                              curr.b.y-static_cast<float>(bias_y), 
+  vn::math::vec3f const bias {curr.b.x+static_cast<float>(bias_x),
+                              curr.b.y-static_cast<float>(bias_y),
                               curr.b.z-static_cast<float>(bias_z-9.80665)};
 
   res.bias_x = static_cast<double>(curr.b.x) - bias_x;
@@ -218,7 +218,7 @@ bool set_horizontal(vectornav::SetFrameHorizontal::Request const & req, vectorna
   res.covariance_x = covariance_x;
   res.covariance_y = covariance_y;
   res.covariance_z = covariance_z;
-  
+
   if (samples.size() < 10) {
     ROS_ERROR("Not enough samples taken. Aborting.");
     res.success = false;
@@ -494,7 +494,7 @@ int main(int argc, char * argv[])
 
   // Register async callback function
   vs.registerAsyncPacketReceivedHandler(&user_data, BinaryAsyncMessageReceived);
-  
+
   // Write bias compensation
   setHorizontalSrv = pn.advertiseService<vectornav::SetFrameHorizontal::Request, vectornav::SetFrameHorizontal::Response>(
     "set_acc_bias", boost::bind(set_horizontal, _1, _2, &vs, &SensorImuRate));
@@ -631,18 +631,18 @@ bool fill_imu_message(
           msgIMU.linear_acceleration.z = al[2];
         } else {
           // put into NWU
-          quat_msg.x = q[0];
-          quat_msg.y = -q[1];
+          quat_msg.x = -q[0];
+          quat_msg.y = q[1];
           quat_msg.z = -q[2];
           quat_msg.w = q[3];
 
           // Invert y and z
-          msgIMU.angular_velocity.x = ar[0];
-          msgIMU.angular_velocity.y = -ar[1];
+          msgIMU.angular_velocity.x = -ar[0];
+          msgIMU.angular_velocity.y = ar[1];
           msgIMU.angular_velocity.z = -ar[2];
           // Invert y and z
-          msgIMU.linear_acceleration.x = al[0];
-          msgIMU.linear_acceleration.y = -al[1];
+          msgIMU.linear_acceleration.x = -al[0];
+          msgIMU.linear_acceleration.y = al[1];
           msgIMU.linear_acceleration.z = -al[2];
 
           if (cd.hasAttitudeUncertainty()) {
@@ -1077,7 +1077,7 @@ void BinaryAsyncMessageReceived(void * userData, Packet & p, size_t index)
       }
     }
     lock.unlock();
-    
+
     if ((pkg_count % user_data->output_stride) == 0) {
       // Magnetic Field
       if (pubMag.getNumSubscribers() > 0) {

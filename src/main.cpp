@@ -582,18 +582,18 @@ bool fill_imu_message(
           msgIMU.linear_acceleration.z = al[2];
         } else {
           // put into ENU - swap X/Y, invert Z
-          quat_msg.x = q[1];
-          quat_msg.y = q[0];
+          quat_msg.x = -q[1];
+          quat_msg.y = -q[0];
           quat_msg.z = -q[2];
           quat_msg.w = q[3];
 
           // Flip x and y then invert z
-          msgIMU.angular_velocity.x = ar[1];
-          msgIMU.angular_velocity.y = ar[0];
+          msgIMU.angular_velocity.x = -ar[1];
+          msgIMU.angular_velocity.y = -ar[0];
           msgIMU.angular_velocity.z = -ar[2];
           // Flip x and y then invert z
-          msgIMU.linear_acceleration.x = al[1];
-          msgIMU.linear_acceleration.y = al[0];
+          msgIMU.linear_acceleration.x = -al[1];
+          msgIMU.linear_acceleration.y = -al[0];
           msgIMU.linear_acceleration.z = -al[2];
 
           if (cd.hasAttitudeUncertainty()) {
@@ -790,8 +790,8 @@ void fill_odom_message(
     } else if (user_data->tf_ned_to_enu && !user_data->frame_based_enu) {
       // alternative method for conversion to ENU frame (leads to another result)
       // put into ENU - swap X/Y, invert Z
-      msgOdom.pose.pose.orientation.x = q[1];
-      msgOdom.pose.pose.orientation.y = q[0];
+      msgOdom.pose.pose.orientation.x = -q[1];
+      msgOdom.pose.pose.orientation.y = -q[0];
       msgOdom.pose.pose.orientation.z = -q[2];
       msgOdom.pose.pose.orientation.w = q[3];
     } else if (user_data->tf_ned_to_nwu && user_data->frame_based_nwu) {
@@ -843,8 +843,8 @@ void fill_odom_message(
     } else if (user_data->tf_ned_to_enu && !user_data->frame_based_enu) {
       // value assignment for conversion by swapping and inverting (not frame_based_enu)
       // Flip x and y then invert z
-      msgOdom.twist.twist.linear.x = vel[1];
-      msgOdom.twist.twist.linear.y = vel[0];
+      msgOdom.twist.twist.linear.x = -vel[1];
+      msgOdom.twist.twist.linear.y = -vel[0];
       msgOdom.twist.twist.linear.z = -vel[2];
     } else if (user_data->tf_ned_to_nwu && !user_data->frame_based_nwu) {
       // value assignment for conversion by swapping and inverting (not frame_based_nwu)
@@ -884,8 +884,8 @@ void fill_odom_message(
     } else if (user_data->tf_ned_to_enu && !user_data->frame_based_enu) {
       // value assignment for conversion by swapping and inverting (not frame_based_enu)
       // Flip x and y then invert z
-      msgOdom.twist.twist.angular.x = ar[1];
-      msgOdom.twist.twist.angular.y = ar[0];
+      msgOdom.twist.twist.angular.x = -ar[1];
+      msgOdom.twist.twist.angular.y = -ar[0];
       msgOdom.twist.twist.angular.z = -ar[2];
     } else if (user_data->tf_ned_to_nwu && !user_data->frame_based_nwu) {
       // value assignment for conversion by swapping and inverting (not frame_based_nwu)

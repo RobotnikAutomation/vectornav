@@ -194,16 +194,9 @@ bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs:
     auto const start = ros::Time::now();
   sample_lock.unlock();
 
-  std::unique_lock<std::mutex> lock(mtx_samples_);
-    samples_.clear();
-    samples_.reserve(static_cast<size_t>(req.duration * params_.fixed_imu_rate * 1.5));
-    take_samples_ = true;
-    auto const start = ros::Time::now();
-  lock.unlock();
-
   ros::Duration(params_.set_acc_bias_seconds).sleep();
 
-  lock.lock();
+  sample_lock.lock();
     auto const end = ros::Time::now();
     take_samples_ = false;
 
@@ -222,7 +215,7 @@ bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs:
       covariance_z += (sample.z - bias_z) * (sample.z - bias_z);
     }
     covariance_x /= samples_.size(); covariance_y /= samples_.size(); covariance_z /= samples_.size();
-  lock.unlock();
+  sample_lock.unlock();
 
   auto const curr { vs_.readAccelerationCompensation() };
 
@@ -236,7 +229,7 @@ bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs:
     res.success = false;
   } else {
     ROS_INFO_NAMED("vectornav", "Applying bias correction to vectornav:");
-    ROS_INFO_NAMED("vectornav", " - Samples taked: %d (%.2lfs)", samples.size(), (end - start).toSec());
+    ROS_INFO_NAMED("vectornav", " - Samples taked: %d (%.2lfs)", samples_.size(), (end - start).toSec());
     ROS_INFO_NAMED("vectornav", " - Bias:       [x: %7.4lf, y: %7.4lf, z: %7.4lf]", bias.x, bias.y, bias.z);
     ROS_INFO_NAMED("vectornav", " - Covariance: [x: %7.4lf, y: %7.4lf, z: %7.4lf]", covariance_x, covariance_y, covariance_z);
     res.message = "Applying bias correction to vectornav, see log for more info. Please, reset vectornav hardware to avoid angular velocity.";

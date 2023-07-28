@@ -163,7 +163,7 @@ void Vectornav::advertise_services()
 }
 bool Vectornav::reset_horizontal(std_srvs::Trigger::Request const & req, std_srvs::Trigger::Response & res)
 {
-  std::unique_lock<std::mutex> service_lock(service_acc_bias_mtx);
+  std::unique_lock<std::mutex> service_lock(service_acc_bias_mtx_);
   ROS_INFO("Reset to factory new acceleration bias");
 
   vn::math::mat3f const gain {1., 0., 0.,
@@ -188,8 +188,8 @@ bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs:
                               0., 0., 1.};
 
   sample_lock.lock();
-    samples.clear();
-    samples.reserve(static_cast<size_t>(params_.set_acc_bias_seconds * params_.imu_output_rate * 1.5));
+    samples_.clear();
+    samples_.reserve(static_cast<size_t>(params_.set_acc_bias_seconds * params_.imu_output_rate * 1.5));
     take_samples = true;
     auto const start = ros::Time::now();
   sample_lock.unlock();
@@ -206,9 +206,6 @@ bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs:
   lock.lock();
     auto const end = ros::Time::now();
     take_samples_ = false;
-
-    res.samples_taken = samples_.size();
-    res.elapsed_time = (end - start).toSec();
 
     // Calculate mean of samples
     double bias_x{0.}, bias_y{0.}, bias_z{0.};
@@ -232,14 +229,6 @@ bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs:
   vn::math::vec3f const bias {curr.b.x-static_cast<float>(bias_x),
                               curr.b.y+static_cast<float>(bias_y),
                               curr.b.z-static_cast<float>(bias_z-9.80665)};
-
-  res.bias_x = static_cast<double>(curr.b.x) - bias_x;
-  res.bias_y = static_cast<double>(curr.b.y) - bias_y;
-  res.bias_z = static_cast<double>(curr.b.z) - (bias_z-9.80665);
-
-  res.covariance_x = covariance_x;
-  res.covariance_y = covariance_y;
-  res.covariance_z = covariance_z;
 
   if (samples_.size() < 10) {
     ROS_ERROR("Not enough samples taken (<10). Aborting.");

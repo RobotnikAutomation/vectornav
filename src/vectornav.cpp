@@ -190,7 +190,7 @@ bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs:
   sample_lock.lock();
     samples_.clear();
     samples_.reserve(static_cast<size_t>(params_.set_acc_bias_seconds * params_.imu_output_rate * 1.5));
-    take_samples = true;
+    take_samples_ = true;
     auto const start = ros::Time::now();
   sample_lock.unlock();
 

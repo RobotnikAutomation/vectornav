@@ -149,11 +149,11 @@ void Vectornav::advertise_services()
 {
   if (params_.acc_bias_enable) {
     // Write bias compensation
-    srv_set_horizontal_ = pn.advertiseService<std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
-      "set_acc_bias", std::bind(&Vectornav::set_horizontal, std::placeholders::_1, std::placeholders::_2));
-
-    srv_reset_horizontal_ = pn.advertiseService<std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
-      "reset_acc_bias", std::bind(&Vectornav::reset_horizontal, std::placeholders::_1, std::placeholders::_2));
+    srv_set_horizontal_ = pnh_.advertiseService<std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
+      "set_acc_bias", std::bind(&Vectornav::set_horizontal, this, std::placeholders::_1, std::placeholders::_2));
+    // Reset bias compensation
+    srv_reset_horizontal_ = pnh_.advertiseService<std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
+      "reset_acc_bias", std::bind(&Vectornav::reset_horizontal, this, std::placeholders::_1, std::placeholders::_2));
   }
   // Filter unnecessary services (not supported by VN-100)
   if (device_family_ != vn::sensors::VnSensor::Family::VnSensor_Family_Vn100) {

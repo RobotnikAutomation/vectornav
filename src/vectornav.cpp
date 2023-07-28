@@ -32,7 +32,7 @@ bool optimize_serial_communication(std::string const & portName)
 }
 #elif
 bool optimize_serial_communication(str::string portName) {
-  ROS_WARN_NAMED("serial_optimizer", 
+  ROS_WARN_NAMED("serial_optimizer",
                  "Serial port low latency optimization not implemented on build platform");
   return true;
 }
@@ -108,11 +108,11 @@ void Vectornav::read_parameters()
   pnh_.param<int>("imu_output_rate",
                   params_.imu_output_rate,
                   params_.imu_output_rate);
-  pnh_.param<std::string>("serial_port", 
-                          params_.port, 
+  pnh_.param<std::string>("serial_port",
+                          params_.port,
                           params_.port);
-  pnh_.param<int>("serial_baud", 
-                  params_.baudrate, 
+  pnh_.param<int>("serial_baud",
+                  params_.baudrate,
                   params_.baudrate);
   pnh_.param<int>("fixed_imu_rate",
                   params_.fixed_imu_rate,
@@ -120,6 +120,9 @@ void Vectornav::read_parameters()
   pnh_.param<int>("max_invalid_packets",
                   params_.max_invalid_packets,
                   params_.max_invalid_packets);
+
+  pnh_.param<bool>("acc_bias_enable", params_.acc_bias_enable, false);
+  pnh_.param<double>("set_acc_bias_seconds", params_.set_acc_bias_seconds, 2.5);
 
   pnh_.getParam("linear_accel_covariance", params_.linear_accel_covariance);
   pnh_.getParam("angular_vel_covariance", params_.angular_vel_covariance);
@@ -144,29 +147,52 @@ void Vectornav::advertise_topics()
 
 void Vectornav::advertise_services()
 {
-  srv_set_horizontal_ = pnh_.advertiseService<vectornav::SetFrameHorizontal::Request, vectornav::SetFrameHorizontal::Response>(
-    "set_horizontal", std::bind(&Vectornav::set_horizontal, this, std::placeholders::_1, std::placeholders::_2));
+  if (params_.acc_bias_enable) {
+    // Write bias compensation
+    srv_set_horizontal_ = pn.advertiseService<std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
+      "set_acc_bias", std::bind(&Vectornav::set_horizontal, std::placeholders::_1, std::placeholders::_2));
+
+    srv_reset_horizontal_ = pn.advertiseService<std_srvs::Trigger::Request, std_srvs::Trigger::Response>(
+      "reset_acc_bias", std::bind(&Vectornav::reset_horizontal, std::placeholders::_1, std::placeholders::_2));
+  }
   // Filter unnecessary services (not supported by VN-100)
   if (device_family_ != vn::sensors::VnSensor::Family::VnSensor_Family_Vn100) {
     srv_reset_odom_ = nh_.advertiseService<std_srvs::Empty::Request, std_srvs::Empty::Response>(
       "reset_odom", std::bind(&Vectornav::reset_odometry, this, std::placeholders::_1, std::placeholders::_2));
   }
 }
-
-bool Vectornav::set_horizontal(vectornav::SetFrameHorizontal::Request const & req, vectornav::SetFrameHorizontal::Response & res)
+bool Vectornav::reset_horizontal(std_srvs::Trigger::Request const & req, std_srvs::Trigger::Response & res)
 {
-  ROS_INFO_NAMED("vectornav", "Set horizontal callback received. Setting horizontal frame.");
+  std::unique_lock<std::mutex> service_lock(service_acc_bias_mtx);
+  ROS_INFO("Reset to factory new acceleration bias");
+
   vn::math::mat3f const gain {1., 0., 0.,
                               0., 1., 0.,
                               0., 0., 1.};
-  
-  if (req.reset) {
-    vs_.writeAccelerationCompensation(gain, {0., 0., 0.}, true);
-    vs_.writeSettings(true);
+  vs_.writeAccelerationCompensation(gain, {0., 0., 0.}, true);
+  vs_.writeSettings(true);
 
-    res.success = true;
-    return true;
-  }
+  res.success = true;
+  res.message = "Bias register set to zero. Please, reset vectornav hardware to avoid angular velocity.";
+  ROS_INFO("Done.");
+  return true;
+}
+
+bool Vectornav::set_horizontal(std_srvs::Trigger::Request const & req, std_srvs::Trigger::Response & res)
+{
+  std::unique_lock<std::mutex> sample_lock(mtx_samples_, std::defer_lock);
+  std::unique_lock<std::mutex> service_lock(service_acc_bias_mtx_);
+  ROS_INFO_NAMED("vectornav", "Set acceleration bias to zero (0.0, 0.0, 9.81)");
+  vn::math::mat3f const gain {1., 0., 0.,
+                              0., 1., 0.,
+                              0., 0., 1.};
+
+  sample_lock.lock();
+    samples.clear();
+    samples.reserve(static_cast<size_t>(params_.set_acc_bias_seconds * params_.imu_output_rate * 1.5));
+    take_samples = true;
+    auto const start = ros::Time::now();
+  sample_lock.unlock();
 
   std::unique_lock<std::mutex> lock(mtx_samples_);
     samples_.clear();
@@ -175,12 +201,12 @@ bool Vectornav::set_horizontal(vectornav::SetFrameHorizontal::Request const & re
     auto const start = ros::Time::now();
   lock.unlock();
 
-  ros::Duration(req.duration).sleep();
-  
+  ros::Duration(params_.set_acc_bias_seconds).sleep();
+
   lock.lock();
     auto const end = ros::Time::now();
     take_samples_ = false;
-    
+
     res.samples_taken = samples_.size();
     res.elapsed_time = (end - start).toSec();
 
@@ -203,8 +229,8 @@ bool Vectornav::set_horizontal(vectornav::SetFrameHorizontal::Request const & re
 
   auto const curr { vs_.readAccelerationCompensation() };
 
-  vn::math::vec3f const bias {curr.b.x+static_cast<float>(bias_x), 
-                              curr.b.y-static_cast<float>(bias_y), 
+  vn::math::vec3f const bias {curr.b.x-static_cast<float>(bias_x),
+                              curr.b.y+static_cast<float>(bias_y),
                               curr.b.z-static_cast<float>(bias_z-9.80665)};
 
   res.bias_x = static_cast<double>(curr.b.x) - bias_x;
@@ -214,15 +240,21 @@ bool Vectornav::set_horizontal(vectornav::SetFrameHorizontal::Request const & re
   res.covariance_x = covariance_x;
   res.covariance_y = covariance_y;
   res.covariance_z = covariance_z;
-  
+
   if (samples_.size() < 10) {
-    ROS_ERROR("Not enough samples taken. Aborting.");
+    ROS_ERROR("Not enough samples taken (<10). Aborting.");
+    res.message = "Not enough samples taken (<10). Aborting.";
     res.success = false;
-    return true;
   } else {
+    ROS_INFO_NAMED("vectornav", "Applying bias correction to vectornav:");
+    ROS_INFO_NAMED("vectornav", " - Samples taked: %d (%.2lfs)", samples.size(), (end - start).toSec());
+    ROS_INFO_NAMED("vectornav", " - Bias:       [x: %7.4lf, y: %7.4lf, z: %7.4lf]", bias.x, bias.y, bias.z);
+    ROS_INFO_NAMED("vectornav", " - Covariance: [x: %7.4lf, y: %7.4lf, z: %7.4lf]", covariance_x, covariance_y, covariance_z);
+    res.message = "Applying bias correction to vectornav, see log for more info. Please, reset vectornav hardware to avoid angular velocity.";
     res.success = true;
     vs_.writeAccelerationCompensation(gain, {bias.x, bias.y, bias.z}, true);
     vs_.writeSettings(true);
+    ROS_INFO_NAMED("vectornav", "Done.");
   }
 
   return true;
@@ -319,7 +351,7 @@ void Vectornav::disconnect_device()
   ROS_INFO_NAMED("vectornav", "Unregisted the Packet Received Handler");
   vs_.disconnect();
   ros::Duration(0.1).sleep();
-  ROS_INFO_NAMED("vectornav", "Device disconnected successfully");  
+  ROS_INFO_NAMED("vectornav", "Device disconnected successfully");
 }
 
 void Vectornav::configure_device()
@@ -417,7 +449,7 @@ void Vectornav::binary_async_message_received(void* aux, vn::protocol::uart::Pac
 }
 
 void Vectornav::binary_async_message_received_(vn::protocol::uart::Packet & p, size_t index)
-{  
+{
   // evaluate time first, to have it as close to the measurement time as possible
   const ros::Time ros_time = ros::Time::now();
 

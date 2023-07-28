@@ -1,16 +1,16 @@
 // Copyright (c) 2022, Robotnik Automation
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
-// 
+//
 // * Redistributions of source code must retain the above copyright notice, this
 //   list of conditions and the following disclaimer.
-// 
+//
 // * Redistributions in binary form must reproduce the above copyright notice,
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -41,7 +41,7 @@
 #include <vectornav/Ins.h>
 
 #include <std_srvs/Empty.h>
-#include <vectornav/SetFrameHorizontal.h>
+#include <std_srvs/Trigger.h>
 
 #include <mutex>
 
@@ -59,7 +59,7 @@ private:
 
   params params_{};
   bool has_rotation_reference_frame_ { false };
-  
+
   vn::sensors::VnSensor vs_{};
 
   int device_family_ { 0 };
@@ -80,7 +80,7 @@ private:
   vn::math::vec3d initial_position_ { };
 
   ros::Publisher pub_imu_, pub_mag_, pub_gps_, pub_odom_, pub_temp_, pub_pres_, pub_ins_;
-  ros::ServiceServer srv_set_horizontal_, srv_reset_odom_;
+  ros::ServiceServer srv_set_horizontal_, srv_reset_odom_, srv_reset_horizontal_;
 
   void read_parameters();
   void advertise_topics();
@@ -91,12 +91,14 @@ private:
   void configure_device();
 
   std::mutex mtx_samples_;
+  std::mutex service_acc_bias_mtx_;
   struct sample_t {double x, y, z;};
   bool take_samples_{false};
-  std::vector<sample_t> samples_{}; 
-  bool set_horizontal(vectornav::SetFrameHorizontal::Request const & req, vectornav::SetFrameHorizontal::Response & res);
+  std::vector<sample_t> samples_{};
+  bool reset_horizontal(std_srvs::Trigger::Request const & req, std_srvs::Trigger::Response & res);
+  bool set_horizontal(std_srvs::Trigger::Request const & req, std_srvs::Trigger::Response & res);
   bool reset_odometry(std_srvs::Empty::Request const & req, std_srvs::Empty::Response & res);
-  
+
   static void binary_async_message_received(void* ,vn::protocol::uart::Packet & p, size_t index);
   void binary_async_message_received_(vn::protocol::uart::Packet & p, size_t index);
   std::uint64_t pkg_count_ { 0U };

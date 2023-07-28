@@ -1,16 +1,16 @@
 // Copyright (c) 2022, Robotnik Automation
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
-// 
+//
 // * Redistributions of source code must retain the above copyright notice, this
 //   list of conditions and the following disclaimer.
-// 
+//
 // * Redistributions in binary form must reproduce the above copyright notice,
 //   this list of conditions and the following disclaimer in the documentation
 //   and/or other materials provided with the distribution.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -51,6 +51,9 @@ struct params
   int imu_output_rate        { 200 };
   int fixed_imu_rate         { 800 };
   int max_invalid_packets    { 500 };
+
+  bool acc_bias_enable       { false };
+  double set_acc_bias_seconds{ 2.5 };
 
   std::vector<double> linear_accel_covariance{0.01, 0.00, 0.00,
                                               0.00, 0.01, 0.00,

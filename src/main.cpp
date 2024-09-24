@@ -68,8 +68,8 @@ using namespace vn::xplat;
 
 // Method declarations for future use.
 void BinaryAsyncMessageReceived(void * userData, Packet & p, size_t index);
-bool ValidateQuaternion(vec4f q);
-bool ValidateVector(vec3f v);
+bool validate_quaternion(vec4f q);
+bool validate_vector(vec3f v);
 int invalid_data = 0;
 // Number of consecutive invalid data packets allowed before shutting node down.
 int max_invalid_packets = -1;
@@ -113,7 +113,7 @@ struct UserData
   unsigned int output_stride;
 };
 
-bool validateSensorTimestamp(const double sensor_time, UserData * user_data);
+bool validate_sensor_timestamp(const double sensor_time, UserData * user_data);
 
 // Basic loop so we can initilize our covariance parameters above
 boost::array<double, 9ul> setCov(XmlRpc::XmlRpcValue rpc)
@@ -528,7 +528,7 @@ bool fill_imu_message(
   vec3f ar = cd.angularRate();
   vec3f al = cd.acceleration();
   
-  if (not ValidateQuaternion(q) or not ValidateVector(ar) or not ValidateVector(al))
+  if (not validate_quaternion(q) or not validate_vector(ar) or not validate_vector(al))
   {
       invalid_data++;
       ROS_WARN_THROTTLE(1, "Invalid data (%d until now). Orientation: %f, %f, %f, %f. Angular velocity: %f, %f, %f. Linear Acceleration: %f, %f, %f",
@@ -545,40 +545,40 @@ bool fill_imu_message(
   }
   invalid_data = 0;
 
-  
   msgIMU.header.stamp = time;
   msgIMU.header.frame_id = user_data->frame_id;
+  
   // convert from IMU frame to ROS standard:
   // IMU = x forward, y right, z down
   // ROS = x forward, y left, z up
-  // so rotate around X, i.e. invert y and z
+  // so first rotate around X, i.e. invert y and z
+ 
+  tf2::Quaternion orientation(q[0], -q[1], -q[2], q[3]);
+  tf2::Vector3 angular_velocity(ar[0], -ar[1], -ar[2]);
+  tf2::Vector3 linear_acceleration(al[0], -al[1], -al[2]);
+  
   // then convert from IMU orientation to ROS standard orientation
   // IMU = NED
   // ROS = ENU
-  // so apply 90 degrees rotation on Z
-  tf2::Quaternion ned_to_enu_rotation;
-  ned_to_enu_rotation.setRPY(0.0,0.0,M_PI/2.0);
-  
-  tf2::Quaternion tf2_quat(q[0], -q[1], -q[2], q[3]);
-  tf2_quat = ned_to_enu_rotation * tf2_quat;
+  // so then apply 90 degrees rotation on Z only to orientation
+  tf2::Quaternion north_to_east_rotation;
+  north_to_east_rotation.setRPY(0.0, 0.0, M_PI/2.0);
+  orientation = north_to_east_rotation * orientation;
 
-  msgIMU.orientation.x = tf2_quat.x();
-  msgIMU.orientation.y = tf2_quat.y();
-  msgIMU.orientation.z = tf2_quat.z();
-  msgIMU.orientation.w = tf2_quat.w();
-  msgIMU.angular_velocity.x = ar[0];
-  msgIMU.angular_velocity.y = -ar[1];
-  msgIMU.angular_velocity.z = -ar[2];
-  msgIMU.linear_acceleration.x = al[0];
-  msgIMU.linear_acceleration.y = -al[1];
-  msgIMU.linear_acceleration.z = -al[2];
+  msgIMU.orientation = tf2::toMsg(orientation);
+  msgIMU.angular_velocity = tf2::toMsg(angular_velocity);
+  msgIMU.linear_acceleration = tf2::toMsg(linear_acceleration);
 
   if (cd.hasAttitudeUncertainty()) {
-    // check 
     vec3f orientationStdDev = cd.attitudeUncertainty();
-    msgIMU.orientation_covariance[0] = pow(orientationStdDev[0] * M_PI / 180, 2);  // Convert to radians Roll
-    msgIMU.orientation_covariance[4] = pow(orientationStdDev[1] * M_PI / 180, 2);  // Convert to radians Pitch
-    msgIMU.orientation_covariance[8] = pow(orientationStdDev[2] * M_PI / 180, 2);  // Convert to radians Yaw
+
+    tf2::Vector3 orientation_covariance(orientationStdDev[0]*orientationStdDev[0], orientationStdDev[1]*orientationStdDev[1], orientationStdDev[2]*orientationStdDev[2]);
+    orientation_covariance = orientation_covariance * M_PI/180.0;
+    orientation_covariance = tf2::quatRotate(north_to_east_rotation, orientation_covariance);
+
+    msgIMU.orientation_covariance[0] =  orientation_covariance[0];
+    msgIMU.orientation_covariance[4] =  orientation_covariance[1];
+    msgIMU.orientation_covariance[8] =  orientation_covariance[2];
   }
   msgIMU.angular_velocity_covariance = user_data->angular_vel_covariance;
   msgIMU.linear_acceleration_covariance = user_data->linear_accel_covariance;
@@ -844,7 +844,7 @@ static ros::Time get_time_stamp(
     user_data->last_sensor_time = sensor_time;
   }
 
-  if (!validateSensorTimestamp(sensor_time, user_data))
+  if (!validate_sensor_timestamp(sensor_time, user_data))
   {
     return ros::Time(0);
   }
@@ -966,19 +966,19 @@ void BinaryAsyncMessageReceived(void * userData, Packet & p, size_t index)
   pkg_count += 1;
 }
 
-bool ValidateQuaternion(vec4f q)
+bool validate_quaternion(vec4f q)
 {
     return std::isfinite(q[0]) and std::isfinite(q[1]) and std::isfinite(q[2]) and std::isfinite(q[3])
     and (std::abs(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3] - 1.0f) < 0.01)
     and !(q[0] == 0 && q[1] == 0 && q[2] == 0 && q[3] == 0);
 }
 
-bool ValidateVector(vec3f v)
+bool validate_vector(vec3f v)
 {
     return std::isfinite(v[0]) and std::isfinite(v[1]) and std::isfinite(v[2]);
 }
 
-bool validateSensorTimestamp(const double sensor_time, UserData * user_data)
+bool validate_sensor_timestamp(const double sensor_time, UserData * user_data)
 {
   bool isValid = true;
 

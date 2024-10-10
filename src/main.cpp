@@ -68,8 +68,8 @@ using namespace vn::xplat;
 
 // Method declarations for future use.
 void BinaryAsyncMessageReceived(void * userData, Packet & p, size_t index);
-bool ValidateQuaternion(vec4f q);
-bool ValidateVector(vec3f v);
+bool validate_quaternion(vec4f q);
+bool validate_vector(vec3f v);
 int invalid_data = 0;
 // Number of consecutive invalid data packets allowed before shutting node down.
 int max_invalid_packets = -1;
@@ -85,14 +85,6 @@ struct UserData
   std::string map_frame_id;
   // frame id used for header.frame_id of other messages and for Odom child_frame_id
   std::string frame_id;
-  // Select ROS publication reference frame.
-  // tf_ned_to_enu and tf_ned_to_nwu can not be used simultaneously.
-  // Both to false to use NED (imu default frame), tf_ned_to_enu to use ENU, tf_ned_to_nwu to use NWU (ROS default frame)
-  // Use frame_based_xxx along with tf_ned_to_xxx if the imu tf frame matches the IMU default frame (not tested yet)
-  bool tf_ned_to_enu;
-  bool frame_based_enu;
-  bool tf_ned_to_nwu;
-  bool frame_based_nwu;
   // Initial position after getting a GPS fix.
   vec3d initial_position;
   bool initial_position_set = false;
@@ -121,7 +113,7 @@ struct UserData
   unsigned int output_stride;
 };
 
-bool validateSensorTimestamp(const double sensor_time, UserData * user_data);
+bool validate_sensor_timestamp(const double sensor_time, UserData * user_data);
 
 // Basic loop so we can initilize our covariance parameters above
 boost::array<double, 9ul> setCov(XmlRpc::XmlRpcValue rpc)
@@ -308,10 +300,6 @@ int main(int argc, char * argv[])
   // Load all params
   pn.param<std::string>("map_frame_id", user_data.map_frame_id, "map");
   pn.param<std::string>("frame_id", user_data.frame_id, "vectornav");
-  pn.param<bool>("tf_ned_to_enu", user_data.tf_ned_to_enu, false);
-  pn.param<bool>("frame_based_enu", user_data.frame_based_enu, false);
-  pn.param<bool>("tf_ned_to_nwu", user_data.tf_ned_to_nwu, true);
-  pn.param<bool>("frame_based_nwu", user_data.frame_based_nwu, false);
   pn.param<bool>("adjust_ros_timestamp", user_data.adjust_ros_timestamp, false);
   pn.param<int>("async_output_rate", async_output_rate, 40);
   pn.param<int>("imu_output_rate", imu_output_rate, async_output_rate);
@@ -335,14 +323,6 @@ int main(int argc, char * argv[])
   if (pn.getParam("rotation_reference_frame", rpc_temp)) {
      user_data.rotation_reference_frame = setRotationFrame(rpc_temp);
      has_rotation_reference_frame = true;
-  }
-
-  if (user_data.tf_ned_to_enu && user_data.tf_ned_to_nwu)
-  {
-    ROS_ERROR("Unable to set both tf_ned_to_enu and tf_ned_to_nwu to true simultaneously. "
-    "Please use just one of them to get data in the ENO or NWU frame, or set both "
-    "to false to get data in the NED frame");
-    ros::shutdown();
   }
 
   ROS_INFO("Connecting to : %s @ %d Baud", SensorPort.c_str(), SensorBaudrate);
@@ -537,161 +517,72 @@ bool fill_imu_message(
   sensor_msgs::Imu & msgIMU, vn::sensors::CompositeData & cd, ros::Time & time,
   UserData * user_data)
 {
+  // not enough data
+  if (not cd.hasQuaternion() or not cd.hasAngularRate() or not cd.hasAcceleration())
+  {
+    ROS_WARN("IMU invalid data, discarding message");
+    return false;
+  }
+
+  vec4f q = cd.quaternion();
+  vec3f ar = cd.angularRate();
+  vec3f al = cd.acceleration();
+  
+  if (not validate_quaternion(q) or not validate_vector(ar) or not validate_vector(al))
+  {
+      invalid_data++;
+      ROS_WARN_THROTTLE(1, "Invalid data (%d until now). Orientation: %f, %f, %f, %f. Angular velocity: %f, %f, %f. Linear Acceleration: %f, %f, %f",
+                  invalid_data, q[0], q[1], q[2], q[3],
+                  ar[0], ar[1], ar[2], al[0], al[1], al[2]);
+
+      // Shutdown node if more than max_invalid_packets are received consecutively
+      if ((max_invalid_packets != -1) && (invalid_data >= max_invalid_packets))
+      {
+        ros::shutdown();
+      }
+
+      return false;
+  }
+  invalid_data = 0;
+
   msgIMU.header.stamp = time;
   msgIMU.header.frame_id = user_data->frame_id;
+  
+  // convert from IMU frame to ROS standard:
+  // IMU = x forward, y right, z down
+  // ROS = x forward, y left, z up
+  // so first rotate around X, i.e. invert y and z
+ 
+  tf2::Quaternion orientation(q[0], -q[1], -q[2], q[3]);
+  tf2::Vector3 angular_velocity(ar[0], -ar[1], -ar[2]);
+  tf2::Vector3 linear_acceleration(al[0], -al[1], -al[2]);
+  
+  // then convert from IMU orientation to ROS standard orientation
+  // IMU = NED
+  // ROS = ENU
+  // so then apply 90 degrees rotation on Z only to orientation
+  tf2::Quaternion north_to_east_rotation;
+  north_to_east_rotation.setRPY(0.0, 0.0, M_PI/2.0);
+  orientation = north_to_east_rotation * orientation;
 
-  if (cd.hasQuaternion() && cd.hasAngularRate() && cd.hasAcceleration()) {
-    vec4f q = cd.quaternion();
-    vec3f ar = cd.angularRate();
-    vec3f al = cd.acceleration();
+  msgIMU.orientation = tf2::toMsg(orientation);
+  msgIMU.angular_velocity = tf2::toMsg(angular_velocity);
+  msgIMU.linear_acceleration = tf2::toMsg(linear_acceleration);
 
-    if (cd.hasAttitudeUncertainty()) {
-      vec3f orientationStdDev = cd.attitudeUncertainty();
-      msgIMU.orientation_covariance[0] =
-        pow(orientationStdDev[2] * M_PI / 180, 2);  // Convert to radians Roll
-      msgIMU.orientation_covariance[4] =
-        pow(orientationStdDev[1] * M_PI / 180, 2);  // Convert to radians Pitch
-      msgIMU.orientation_covariance[8] =
-        pow(orientationStdDev[0] * M_PI / 180, 2);  // Convert to radians Yaw
-    }
+  if (cd.hasAttitudeUncertainty()) {
+    vec3f orientationStdDev = cd.attitudeUncertainty();
 
-    if (not ValidateQuaternion(q) or not ValidateVector(ar) or not ValidateVector(al))
-    {
-        invalid_data++;
-        ROS_WARN_THROTTLE(1, "Invalid data (%d until now). Orientation: %f, %f, %f, %f. Angular velocity: %f, %f, %f. Linear Acceleration: %f, %f, %f",
-                    invalid_data, q[0], q[1], q[2], q[3],
-                    ar[0], ar[1], ar[2], al[0], al[1], al[2]);
+    tf2::Vector3 orientation_covariance(orientationStdDev[0]*orientationStdDev[0], orientationStdDev[1]*orientationStdDev[1], orientationStdDev[2]*orientationStdDev[2]);
+    orientation_covariance = orientation_covariance * M_PI/180.0;
+    orientation_covariance = tf2::quatRotate(north_to_east_rotation, orientation_covariance);
 
-        // Shutdown node if more than max_invalid_packets are received consecutively
-        if ((max_invalid_packets != -1) && (invalid_data >= max_invalid_packets))
-        {
-          ros::shutdown();
-        }
-
-        return false;
-    }
-    else
-    {
-      invalid_data = 0;
-      //Quaternion message comes in as a Yaw (z) pitch (y) Roll (x) format
-      if (user_data->tf_ned_to_enu) {
-        // If we want the orientation to be based on the reference label on the imu
-        tf2::Quaternion tf2_quat(q[0], q[1], q[2], q[3]);
-        geometry_msgs::Quaternion quat_msg;
-
-        if (user_data->frame_based_enu) {
-          // Create a rotation from NED -> ENU
-          tf2::Quaternion q_rotate;
-          q_rotate.setRPY(M_PI, 0.0, M_PI / 2);
-          // Apply the NED to ENU rotation such that the coordinate frame matches
-          tf2_quat = q_rotate * tf2_quat;
-          quat_msg = tf2::toMsg(tf2_quat);
-
-          // Since everything is in the normal frame, no flipping required
-          msgIMU.angular_velocity.x = ar[0];
-          msgIMU.angular_velocity.y = ar[1];
-          msgIMU.angular_velocity.z = ar[2];
-
-          msgIMU.linear_acceleration.x = al[0];
-          msgIMU.linear_acceleration.y = al[1];
-          msgIMU.linear_acceleration.z = al[2];
-        } else {
-          // put into ENU - swap X/Y, invert Z
-          quat_msg.x = -q[1];
-          quat_msg.y = -q[0];
-          quat_msg.z = -q[2];
-          quat_msg.w = q[3];
-
-          // Flip x and y then invert z
-          msgIMU.angular_velocity.x = -ar[1];
-          msgIMU.angular_velocity.y = -ar[0];
-          msgIMU.angular_velocity.z = -ar[2];
-          // Flip x and y then invert z
-          msgIMU.linear_acceleration.x = -al[1];
-          msgIMU.linear_acceleration.y = -al[0];
-          msgIMU.linear_acceleration.z = -al[2];
-
-          if (cd.hasAttitudeUncertainty()) {
-            vec3f orientationStdDev = cd.attitudeUncertainty();
-            msgIMU.orientation_covariance[0] =
-              pow(orientationStdDev[1] * M_PI / 180, 2);  // Convert to radians pitch
-            msgIMU.orientation_covariance[4] =
-              pow(orientationStdDev[0] * M_PI / 180, 2);  // Convert to radians Roll
-            msgIMU.orientation_covariance[8] =
-              pow(orientationStdDev[2] * M_PI / 180, 2);  // Convert to radians Yaw
-          }
-        }
-
-        msgIMU.orientation = quat_msg;
-      }
-      else if (user_data->tf_ned_to_nwu) {
-        tf2::Quaternion tf2_quat(q[0], q[1], q[2], q[3]);
-        geometry_msgs::Quaternion quat_msg;
-
-        if (user_data->frame_based_nwu) {
-          // Create a rotation from NED -> NWU
-          tf2::Quaternion q_rotate;
-          q_rotate.setRPY(M_PI, 0.0, 0.0);
-          // Apply the NED to ENU rotation such that the coordinate frame matches
-          tf2_quat = q_rotate * tf2_quat;
-          quat_msg = tf2::toMsg(tf2_quat);
-
-          // Since everything is in the normal frame, no flipping required
-          msgIMU.angular_velocity.x = ar[0];
-          msgIMU.angular_velocity.y = ar[1];
-          msgIMU.angular_velocity.z = ar[2];
-
-          msgIMU.linear_acceleration.x = al[0];
-          msgIMU.linear_acceleration.y = al[1];
-          msgIMU.linear_acceleration.z = al[2];
-        } else {
-          // put into NWU
-          quat_msg.x = -q[0];
-          quat_msg.y = q[1];
-          quat_msg.z = -q[2];
-          quat_msg.w = q[3];
-
-          // Invert y and z
-          msgIMU.angular_velocity.x = -ar[0];
-          msgIMU.angular_velocity.y = ar[1];
-          msgIMU.angular_velocity.z = -ar[2];
-          // Invert y and z
-          msgIMU.linear_acceleration.x = -al[0];
-          msgIMU.linear_acceleration.y = al[1];
-          msgIMU.linear_acceleration.z = -al[2];
-
-          if (cd.hasAttitudeUncertainty()) {
-            vec3f orientationStdDev = cd.attitudeUncertainty();
-            msgIMU.orientation_covariance[0] =
-              pow(orientationStdDev[0] * M_PI / 180, 2);  // Convert to radians roll
-            msgIMU.orientation_covariance[4] =
-              pow(orientationStdDev[1] * M_PI / 180, 2);  // Convert to radians pitch
-            msgIMU.orientation_covariance[8] =
-              pow(orientationStdDev[2] * M_PI / 180, 2);  // Convert to radians Yaw
-          }
-        }
-        msgIMU.orientation = quat_msg;
-      } else {
-        msgIMU.orientation.x = q[0];
-        msgIMU.orientation.y = q[1];
-        msgIMU.orientation.z = q[2];
-        msgIMU.orientation.w = q[3];
-
-        msgIMU.angular_velocity.x = ar[0];
-        msgIMU.angular_velocity.y = ar[1];
-        msgIMU.angular_velocity.z = ar[2];
-        msgIMU.linear_acceleration.x = al[0];
-        msgIMU.linear_acceleration.y = al[1];
-        msgIMU.linear_acceleration.z = al[2];
-      }
-      // Covariances pulled from parameters
-      msgIMU.angular_velocity_covariance = user_data->angular_vel_covariance;
-      msgIMU.linear_acceleration_covariance = user_data->linear_accel_covariance;
-    }
-    return true;
+    msgIMU.orientation_covariance[0] =  orientation_covariance[0];
+    msgIMU.orientation_covariance[4] =  orientation_covariance[1];
+    msgIMU.orientation_covariance[8] =  orientation_covariance[2];
   }
-  ROS_WARN("IMU invalid data, discarding message");
-  return false;
+  msgIMU.angular_velocity_covariance = user_data->angular_vel_covariance;
+  msgIMU.linear_acceleration_covariance = user_data->linear_accel_covariance;
+  return true;
 }
 
 //Helper function to create magnetic field message
@@ -787,62 +678,18 @@ void fill_odom_message(
   if (cd.hasQuaternion()) {
     vec4f q = cd.quaternion();
 
-    if (!user_data->tf_ned_to_enu && !user_data->tf_ned_to_nwu) {
-      // output in NED frame
-      msgOdom.pose.pose.orientation.x = q[0];
-      msgOdom.pose.pose.orientation.y = q[1];
-      msgOdom.pose.pose.orientation.z = q[2];
-      msgOdom.pose.pose.orientation.w = q[3];
-    } else if (user_data->tf_ned_to_enu && user_data->frame_based_enu) {
-      // standard conversion from NED to ENU frame
-      tf2::Quaternion tf2_quat(q[0], q[1], q[2], q[3]);
-      // Create a rotation from NED -> ENU
-      tf2::Quaternion q_rotate;
-      q_rotate.setRPY(M_PI, 0.0, M_PI / 2);
-      // Apply the NED to ENU rotation such that the coordinate frame matches
-      tf2_quat = q_rotate * tf2_quat;
-      msgOdom.pose.pose.orientation = tf2::toMsg(tf2_quat);
-    } else if (user_data->tf_ned_to_enu && !user_data->frame_based_enu) {
-      // alternative method for conversion to ENU frame (leads to another result)
-      // put into ENU - swap X/Y, invert Z
-      msgOdom.pose.pose.orientation.x = -q[1];
-      msgOdom.pose.pose.orientation.y = -q[0];
-      msgOdom.pose.pose.orientation.z = -q[2];
-      msgOdom.pose.pose.orientation.w = q[3];
-    } else if (user_data->tf_ned_to_nwu && user_data->frame_based_nwu) {
-      // standard conversion from NED to ENU frame
-      tf2::Quaternion tf2_quat(q[0], q[1], q[2], q[3]);
-      // Create a rotation from NED -> ENU
-      tf2::Quaternion q_rotate;
-      q_rotate.setRPY(M_PI, 0.0, 0.0);
-      // Apply the NED to ENU rotation such that the coordinate frame matches
-      tf2_quat = q_rotate * tf2_quat;
-      msgOdom.pose.pose.orientation = tf2::toMsg(tf2_quat);
-    } else if (user_data->tf_ned_to_nwu && !user_data->frame_based_nwu) {
-      // alternative method for conversion to ENU frame (leads to another result)
-      // put into ENU - swap X/Y, invert Z
-      msgOdom.pose.pose.orientation.x = -q[0];
-      msgOdom.pose.pose.orientation.y = q[1];
-      msgOdom.pose.pose.orientation.z = -q[2];
-      msgOdom.pose.pose.orientation.w = q[3];
-    }
+    msgOdom.pose.pose.orientation.x = q[0];
+    msgOdom.pose.pose.orientation.y = q[1];
+    msgOdom.pose.pose.orientation.z = q[2];
+    msgOdom.pose.pose.orientation.w = q[3];
 
     // Read the estimation uncertainty (1 Sigma) from the sensor and write it to the covariance matrix.
     if (cd.hasAttitudeUncertainty()) {
       vec3f orientationStdDev = cd.attitudeUncertainty();
-      // convert the standard deviation values from all three axis from degrees to radiant and calculate the variances from these (squared), which are assigned to the covariance matrix.
-      if ( (!user_data->tf_ned_to_enu && !user_data->tf_ned_to_nwu) || user_data->frame_based_enu || user_data->frame_based_nwu) {
         // standard assignment of variance values for NED frame and conversion to ENU frame by rotation
         msgOdom.pose.covariance[21] = pow(orientationStdDev[0] * M_PI / 180, 2);  // roll variance
         msgOdom.pose.covariance[28] = pow(orientationStdDev[1] * M_PI / 180, 2);  // pitch variance
         msgOdom.pose.covariance[35] = pow(orientationStdDev[2] * M_PI / 180, 2);  // yaw variance
-      } else if (user_data->tf_ned_to_enu && !user_data->frame_based_enu){
-        // variance assignment for conversion by swapping and inverting (not frame_based_enu or frame_based_nwu)
-        // TODO not supported yet
-      } else if (user_data->tf_ned_to_nwu && !user_data->frame_based_nwu) {
-        // variance assignment for conversion by swapping and inverting (not frame_based_enu or frame_based_nwu)
-        // TODO not supported yet
-      }
     }
   }
 
@@ -850,24 +697,9 @@ void fill_odom_message(
   if (cd.hasVelocityEstimatedBody()) {
     vec3f vel = cd.velocityEstimatedBody();
 
-    if ( (!user_data->tf_ned_to_enu && !user_data->tf_ned_to_nwu) || user_data->frame_based_enu || user_data->frame_based_nwu) {
-      // standard assignment of values for NED frame and conversion to ENU or NWU frame by rotation
-      msgOdom.twist.twist.linear.x = vel[0];
-      msgOdom.twist.twist.linear.y = vel[1];
-      msgOdom.twist.twist.linear.z = vel[2];
-    } else if (user_data->tf_ned_to_enu && !user_data->frame_based_enu) {
-      // value assignment for conversion by swapping and inverting (not frame_based_enu)
-      // Flip x and y then invert z
-      msgOdom.twist.twist.linear.x = -vel[1];
-      msgOdom.twist.twist.linear.y = -vel[0];
-      msgOdom.twist.twist.linear.z = -vel[2];
-    } else if (user_data->tf_ned_to_nwu && !user_data->frame_based_nwu) {
-      // value assignment for conversion by swapping and inverting (not frame_based_nwu)
-      // Invert y and z
-      msgOdom.twist.twist.linear.x = -vel[0];
-      msgOdom.twist.twist.linear.y = vel[1];
-      msgOdom.twist.twist.linear.z = -vel[2];
-    }
+    msgOdom.twist.twist.linear.x = vel[0];
+    msgOdom.twist.twist.linear.y = vel[1];
+    msgOdom.twist.twist.linear.z = vel[2];
 
     // Read the estimation uncertainty (1 Sigma) from the sensor and write it to the covariance matrix.
     if (cd.hasVelocityUncertaintyEstimated()) {
@@ -890,25 +722,9 @@ void fill_odom_message(
 
   if (cd.hasAngularRate()) {
     vec3f ar = cd.angularRate();
-
-    if ( (!user_data->tf_ned_to_enu && !user_data->tf_ned_to_nwu) || user_data->frame_based_enu || user_data->frame_based_nwu) {
-      // standard assignment of values for NED frame and conversion to ENU or NWU frame by rotation
-      msgOdom.twist.twist.angular.x = ar[0];
-      msgOdom.twist.twist.angular.y = ar[1];
-      msgOdom.twist.twist.angular.z = ar[2];
-    } else if (user_data->tf_ned_to_enu && !user_data->frame_based_enu) {
-      // value assignment for conversion by swapping and inverting (not frame_based_enu)
-      // Flip x and y then invert z
-      msgOdom.twist.twist.angular.x = -ar[1];
-      msgOdom.twist.twist.angular.y = -ar[0];
-      msgOdom.twist.twist.angular.z = -ar[2];
-    } else if (user_data->tf_ned_to_nwu && !user_data->frame_based_nwu) {
-      // value assignment for conversion by swapping and inverting (not frame_based_nwu)
-      // Invert y and z
-      msgOdom.twist.twist.angular.x = -ar[0];
-      msgOdom.twist.twist.angular.y = ar[1];
-      msgOdom.twist.twist.angular.z = -ar[2];
-    }
+    msgOdom.twist.twist.angular.x = ar[0];
+    msgOdom.twist.twist.angular.y = ar[1];
+    msgOdom.twist.twist.angular.z = ar[2];
 
     // add covariance matrix of the measured angular rate to odom message.
     // go through matrix rows
@@ -1028,7 +844,7 @@ static ros::Time get_time_stamp(
     user_data->last_sensor_time = sensor_time;
   }
 
-  if (!validateSensorTimestamp(sensor_time, user_data))
+  if (!validate_sensor_timestamp(sensor_time, user_data))
   {
     return ros::Time(0);
   }
@@ -1150,19 +966,19 @@ void BinaryAsyncMessageReceived(void * userData, Packet & p, size_t index)
   pkg_count += 1;
 }
 
-bool ValidateQuaternion(vec4f q)
+bool validate_quaternion(vec4f q)
 {
     return std::isfinite(q[0]) and std::isfinite(q[1]) and std::isfinite(q[2]) and std::isfinite(q[3])
     and (std::abs(q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3] - 1.0f) < 0.01)
     and !(q[0] == 0 && q[1] == 0 && q[2] == 0 && q[3] == 0);
 }
 
-bool ValidateVector(vec3f v)
+bool validate_vector(vec3f v)
 {
     return std::isfinite(v[0]) and std::isfinite(v[1]) and std::isfinite(v[2]);
 }
 
-bool validateSensorTimestamp(const double sensor_time, UserData * user_data)
+bool validate_sensor_timestamp(const double sensor_time, UserData * user_data)
 {
   bool isValid = true;
 

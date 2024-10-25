@@ -219,7 +219,7 @@ bool set_horizontal(std_srvs::Trigger::Request const & req, std_srvs::Trigger::R
     return true;
   } else {
     ROS_INFO("Applying bias correction to vectornav:");
-    ROS_INFO(" - Samples taked: %d (%.2lfs)", samples.size(), (end - start).toSec());
+    ROS_INFO(" - Samples taked: %lu (%.2lfs)", samples.size(), (end - start).toSec());
     ROS_INFO(" - Bias:       [x: %7.4lf, y: %7.4lf, z: %7.4lf]", bias.x, bias.y, bias.z);
     ROS_INFO(" - Covariance: [x: %7.4lf, y: %7.4lf, z: %7.4lf]", covariance_x, covariance_y, covariance_z);
     res.message = "Applying bias correction to vectornav, see log for more info. Please, reset vectornav hardware to avoid angular velocity.";

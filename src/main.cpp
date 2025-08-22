@@ -158,7 +158,7 @@ void reset_horizontal(const std::shared_ptr<std_srvs::srv::Trigger::Request> req
                               0., 0., 1.};
   vs_ptr->writeAccelerationCompensation(gain, {0., 0., 0.}, true);
   vs_ptr->writeSettings(true);
-  
+
   resp->success = true;
   resp->message = "Bias register set to zero. Please, reset vectornav hardware to avoid angular velocity.";
   RCLCPP_INFO(node->get_logger(), "Done.");
@@ -207,10 +207,10 @@ void set_horizontal(const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
 
   auto const curr { vs_ptr->readAccelerationCompensation() };
 
-  vn::math::vec3f const bias {curr.b.x+static_cast<float>(bias_x), 
-                              curr.b.y-static_cast<float>(bias_y), 
+  vn::math::vec3f const bias {curr.b.x+static_cast<float>(bias_x),
+                              curr.b.y-static_cast<float>(bias_y),
                               curr.b.z-static_cast<float>(bias_z-9.80665)};
-  
+
   if (samples.size() < 10) {
     RCLCPP_ERROR(node->get_logger(), "Not enough samples taken. Aborting.");
     RCLCPP_ERROR(node->get_logger(), "Not enough samples taken (<10). Aborting.");
@@ -505,7 +505,7 @@ int main(int argc, char * argv[])
 
   // Register async callback function
   vs.registerAsyncPacketReceivedHandler(&user_data, BinaryAsyncMessageReceived);
-  
+
   // Write bias compensation
   if (user_data.acc_bias_enable) {
     setHorizontalSrv = node->create_service<std_srvs::srv::Trigger>(
@@ -688,6 +688,9 @@ bool fill_imu_message(
       std::copy(user_data->angular_vel_covariance.begin(),
         user_data->angular_vel_covariance.end(),
         msgIMU.angular_velocity_covariance.begin());
+      std::copy(user_data->linear_accel_covariance.begin(),
+        user_data->linear_accel_covariance.end(),
+        msgIMU.linear_acceleration_covariance.begin());
     }
     return true;
   }
@@ -1093,7 +1096,7 @@ void BinaryAsyncMessageReceived(void * userData, Packet & p, size_t index)
       }
     }
     lock.unlock();
-    
+
     if ((pkg_count % user_data->output_stride) == 0) {
       // Magnetic Field
       if (pubMag->get_subscription_count() > 0) {

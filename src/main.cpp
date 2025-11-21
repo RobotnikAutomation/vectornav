@@ -538,11 +538,11 @@ int main(int argc, char * argv[])
       "~/set_acc_bias", std::bind(set_horizontal, std::placeholders::_1, std::placeholders::_2, &vs, &SensorImuRate, &user_data.set_acc_bias_seconds));
     resetHorizontalSrv = node->create_service<std_srvs::srv::Trigger>(
       "~/reset_acc_bias", std::bind(reset_horizontal, std::placeholders::_1, std::placeholders::_2, &vs));
-    resetDeviceSrv = node->create_service<std_srvs::srv::Trigger>(
-      "~/reset_device", std::bind(reset_device, std::placeholders::_1, std::placeholders::_2, &vs));
-    tareDeviceSrv = node->create_service<std_srvs::srv::Trigger>(
-      "~/tare_device", std::bind(tare_device, std::placeholders::_1, std::placeholders::_2, &vs));
   }
+  resetDeviceSrv = node->create_service<std_srvs::srv::Trigger>(
+    "~/reset_device", std::bind(reset_device, std::placeholders::_1, std::placeholders::_2, &vs));
+  tareDeviceSrv = node->create_service<std_srvs::srv::Trigger>(
+    "~/tare_device", std::bind(tare_device, std::placeholders::_1, std::placeholders::_2, &vs));
 
   // You spin me right round, baby
   // Right round like a record, baby

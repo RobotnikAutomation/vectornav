@@ -163,6 +163,28 @@ void Vectornav::reset_acc_bias(
   RCLCPP_INFO(get_logger(), "Done.");
 }
 
+void Vectornav::reset_device(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> resp)
+{
+  RCLCPP_INFO(get_logger(), "Reset device callback received. Resetting device.");
+  vs_.reset();
+  resp->message = "Device reset command sent. Please, wait for device to reboot.";
+  resp->success = true;
+  RCLCPP_INFO(get_logger(), "Done.");
+}
+
+void Vectornav::tare_device(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> resp)
+{
+  RCLCPP_INFO(get_logger(), "Tare device callback received. Taring device.");
+  vs_.tare();
+  resp->message = "Device tare command sent. Current readings zeroed.";
+  resp->success = true;
+  RCLCPP_INFO(get_logger(), "Done.");
+}
+
 void Vectornav::advertise_services()
 {
   if (params_.acc_bias_enable) {
@@ -171,6 +193,10 @@ void Vectornav::advertise_services()
     srv_set_acc_bias_ = create_service<std_srvs::srv::Trigger>(
       "~/set_acc_bias", std::bind(&Vectornav::set_acc_bias, this, std::placeholders::_1, std::placeholders::_2));
   }
+  srv_reset_device_ = create_service<std_srvs::srv::Trigger>(
+    "~/reset_device", std::bind(&Vectornav::reset_device, this, std::placeholders::_1, std::placeholders::_2));
+  srv_tare_device_ = create_service<std_srvs::srv::Trigger>(
+    "~/tare_device", std::bind(&Vectornav::tare_device, this, std::placeholders::_1, std::placeholders::_2));
   // Filter unnecessary services (not supported by VN-100)
   if (device_family_ != vn::sensors::VnSensor::Family::VnSensor_Family_Vn100) {
     srv_reset_odom_ = create_service<std_srvs::srv::Empty>(

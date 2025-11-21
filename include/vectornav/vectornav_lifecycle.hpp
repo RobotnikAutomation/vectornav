@@ -95,6 +95,8 @@ private:
   // Services
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr
     srv_set_acc_bias_{ nullptr }, srv_reset_acc_bias_{ nullptr };
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr
+    srv_reset_device_{ nullptr }, srv_tare_device_{ nullptr };
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr
     srv_reset_odom_{ nullptr };
 
@@ -118,6 +120,12 @@ private:
     const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
     std::shared_ptr<std_srvs::srv::Trigger::Response> resp);
   void reset_acc_bias(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> resp);
+  void reset_device(
+    const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> resp);
+  void tare_device(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
     std::shared_ptr<std_srvs::srv::Trigger::Response> resp);
   void reset_odometry(

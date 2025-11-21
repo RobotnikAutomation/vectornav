@@ -57,7 +57,7 @@ rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr pubPres;
 rclcpp::Publisher<vectornav::msg::Ins>::SharedPtr pubIns;
 
 rclcpp::Service<std_srvs::srv::Empty>::SharedPtr resetOdomSrv;
-rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr setHorizontalSrv, resetHorizontalSrv;
+rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr setHorizontalSrv, resetHorizontalSrv, resetDeviceSrv, tareDeviceSrv;
 
 //XmlRpc::XmlRpcValue rpc_temp;
 
@@ -161,6 +161,32 @@ void reset_horizontal(const std::shared_ptr<std_srvs::srv::Trigger::Request> req
 
   resp->success = true;
   resp->message = "Bias register set to zero. Please, reset vectornav hardware to avoid angular velocity.";
+  RCLCPP_INFO(node->get_logger(), "Done.");
+}
+
+void reset_device(const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> resp, VnSensor* vs_ptr)
+{
+  std::unique_lock<std::mutex> service_lock(service_acc_bias_mtx);
+  RCLCPP_INFO(node->get_logger(), "Reset vectornav device");
+
+  vs_ptr->reset();
+
+  resp->success = true;
+  resp->message = "Device reset command sent.";
+  RCLCPP_INFO(node->get_logger(), "Done.");
+}
+
+void tare_device(const std::shared_ptr<std_srvs::srv::Trigger::Request> req,
+    std::shared_ptr<std_srvs::srv::Trigger::Response> resp, VnSensor* vs_ptr)
+{
+  std::unique_lock<std::mutex> service_lock(service_acc_bias_mtx);
+  RCLCPP_INFO(node->get_logger(), "Tare vectornav device (zero angular velocity and acceleration)");
+
+  vs_ptr->tare();
+
+  resp->success = true;
+  resp->message = "Device tare command sent.";
   RCLCPP_INFO(node->get_logger(), "Done.");
 }
 
@@ -512,6 +538,10 @@ int main(int argc, char * argv[])
       "~/set_acc_bias", std::bind(set_horizontal, std::placeholders::_1, std::placeholders::_2, &vs, &SensorImuRate, &user_data.set_acc_bias_seconds));
     resetHorizontalSrv = node->create_service<std_srvs::srv::Trigger>(
       "~/reset_acc_bias", std::bind(reset_horizontal, std::placeholders::_1, std::placeholders::_2, &vs));
+    resetDeviceSrv = node->create_service<std_srvs::srv::Trigger>(
+      "~/reset_device", std::bind(reset_device, std::placeholders::_1, std::placeholders::_2, &vs));
+    tareDeviceSrv = node->create_service<std_srvs::srv::Trigger>(
+      "~/tare_device", std::bind(tare_device, std::placeholders::_1, std::placeholders::_2, &vs));
   }
 
   // You spin me right round, baby
